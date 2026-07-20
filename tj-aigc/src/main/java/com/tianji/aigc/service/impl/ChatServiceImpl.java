@@ -1,5 +1,7 @@
 package com.tianji.aigc.service.impl;
 
+import cn.hutool.core.date.DateUtil;
+import com.tianji.aigc.config.SystemPromptConfig;
 import com.tianji.aigc.enums.ChatEventTypeEnum;
 import com.tianji.aigc.service.ChatService;
 import com.tianji.aigc.vo.ChatEventVO;
@@ -9,16 +11,25 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.util.Map;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
     public final ChatClient chatClient;
+    public final SystemPromptConfig systemPromptConfig;
 
     @Override
     public Flux<ChatEventVO> chat(String question, String sessionId) {
         return chatClient.prompt()
+                .system(promptSystem -> promptSystem
+                        //系统提示词
+                        .text(systemPromptConfig.getChatSystemMessage().get())
+                        //系统提示中的参数
+                        .params(Map.of("now", DateUtil.now()))
+                )
                 .user(question)
                 .stream()
                 .chatResponse()
