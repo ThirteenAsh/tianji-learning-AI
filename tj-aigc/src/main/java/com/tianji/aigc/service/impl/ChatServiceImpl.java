@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -22,6 +23,8 @@ public class ChatServiceImpl implements ChatService {
 
     public final ChatClient chatClient;
     public final SystemPromptConfig systemPromptConfig;
+    private final ChatMemory chatMemory;
+
     // 存储大模型的生成状态，这里采用ConcurrentHashMap是确保线程安全
     // 目前的版本暂时用Map实现，如果考虑分布式环境的话，可以考虑用redis来实现
     private static final Map<String, Boolean> GENERATE_STATUS = new ConcurrentHashMap<>();
@@ -30,6 +33,7 @@ public class ChatServiceImpl implements ChatService {
     public Flux<ChatEventVO> chat(String question, String sessionId) {
         // 获取对话id
         var conversationId = ChatService.getConversationId(sessionId);
+        var outputBuilder = new StringBuilder();
         return chatClient.prompt()
                 .system(promptSystem -> promptSystem
                         //系统提示词
@@ -50,11 +54,17 @@ public class ChatServiceImpl implements ChatService {
                     GENERATE_STATUS.remove(sessionId);
                 })
                 .doOnComplete(() -> GENERATE_STATUS.remove(sessionId))
+                .doOnCancel(() -> {
+                    // 当输出被取消时，保存输出的内容到历史记录中
+                    this.saveStopHistoryRecord(conversationId, outputBuilder.toString());
+                })
                 //当大模型生成状态为false时，停止生成
                 .takeWhile(chatResponse -> GENERATE_STATUS.getOrDefault(sessionId, false))
                 .map(chatResponse -> {
                     //拿到大模型生成的内容
                     var text = chatResponse.getResult().getOutput().getText();
+                    //大模型输出的内容
+                    outputBuilder.append(text);
                     return ChatEventVO.builder()
                             .eventData(text)
                             .eventType(ChatEventTypeEnum.DATA.getValue())
@@ -69,5 +79,15 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void stop(String sessionId) {
         GENERATE_STATUS.remove(sessionId);
+    }
+
+    /**
+     * 保存停止输出的记录
+     *
+     * @param conversationId 会话id
+     * @param content        大模型输出的内容
+     */
+    private void saveStopHistoryRecord(String conversationId, String content) {
+        this.chatMemory.add(conversationId, new AssistantMessage(content));
     }
 }
