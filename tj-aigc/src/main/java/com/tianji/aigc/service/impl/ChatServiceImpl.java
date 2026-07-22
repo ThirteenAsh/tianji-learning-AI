@@ -1,7 +1,11 @@
 package com.tianji.aigc.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.util.IdUtil;
 import com.tianji.aigc.config.SystemPromptConfig;
+import com.tianji.aigc.config.ToolResultHolder;
+import com.tianji.aigc.constants.Constant;
 import com.tianji.aigc.enums.ChatEventTypeEnum;
 import com.tianji.aigc.service.ChatService;
 import com.tianji.aigc.vo.ChatEventVO;
@@ -21,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
+    // 停止事件对象，表示大模型生成结束
+    private static final ChatEventVO STOP_EVENT = ChatEventVO.builder().eventType(ChatEventTypeEnum.STOP.getValue()).build();
     public final ChatClient chatClient;
     public final SystemPromptConfig systemPromptConfig;
     private final ChatMemory chatMemory;
@@ -34,6 +40,10 @@ public class ChatServiceImpl implements ChatService {
         // 获取对话id
         var conversationId = ChatService.getConversationId(sessionId);
         var outputBuilder = new StringBuilder();
+
+        //生成工具调用的请求id
+        String requestId = IdUtil.simpleUUID();
+
         return chatClient.prompt()
                 .system(promptSystem -> promptSystem
                         //系统提示词
@@ -42,6 +52,7 @@ public class ChatServiceImpl implements ChatService {
                         .params(Map.of("now", DateUtil.now()))
                 )
                 .advisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId)) //设置对话记忆中的对话id
+                .toolContext(Map.of(Constant.REQUEST_ID, requestId)) //设置工具调用的请求id
                 .user(question)
                 .stream()
                 .chatResponse()
@@ -70,10 +81,22 @@ public class ChatServiceImpl implements ChatService {
                             .eventType(ChatEventTypeEnum.DATA.getValue())
                             .build();
                 })
-                //结束标识
-                .concatWith(Flux.just(ChatEventVO.builder()
-                        .eventType(ChatEventTypeEnum.STOP.getValue())
-                        .build()));
+                //如果当前请求中有工具生成的数据（也就是工具被调用了），就加到流中，反之不添加
+                .concatWith(Flux.defer(() -> {
+                    // 通过请求id获取到参数列表，如果不为空，就将其追加到返回结果中
+                    var map = ToolResultHolder.get(requestId);
+                    if (CollUtil.isNotEmpty(map)) {
+                        ToolResultHolder.remove(requestId); // 清除参数列表
+
+                        // 响应给前端的参数数据
+                        var chatEventVO = ChatEventVO.builder()
+                                .eventData(map)
+                                .eventType(ChatEventTypeEnum.PARAM.getValue())
+                                .build();
+                        return Flux.just(chatEventVO, STOP_EVENT);
+                    }
+                    return Flux.just(STOP_EVENT);
+                }));
     }
 
     @Override
