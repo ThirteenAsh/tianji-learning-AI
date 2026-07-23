@@ -9,6 +9,7 @@ import com.tianji.aigc.constants.Constant;
 import com.tianji.aigc.enums.ChatEventTypeEnum;
 import com.tianji.aigc.service.ChatService;
 import com.tianji.aigc.vo.ChatEventVO;
+import com.tianji.common.utils.UserContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -43,6 +44,8 @@ public class ChatServiceImpl implements ChatService {
 
         //生成工具调用的请求id
         String requestId = IdUtil.simpleUUID();
+        // 获取用户id
+        var userId = UserContext.getUser();
 
         return chatClient.prompt()
                 .system(promptSystem -> promptSystem
@@ -52,7 +55,7 @@ public class ChatServiceImpl implements ChatService {
                         .params(Map.of("now", DateUtil.now()))
                 )
                 .advisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId)) //设置对话记忆中的对话id
-                .toolContext(Map.of(Constant.REQUEST_ID, requestId)) //设置工具调用的请求id
+                .toolContext(Map.of(Constant.REQUEST_ID, requestId, Constant.USER_ID, userId)) //通过工具上下文传递参数
                 .user(question)
                 .stream()
                 .chatResponse()
