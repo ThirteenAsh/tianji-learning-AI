@@ -3,6 +3,7 @@ package com.tianji.aigc.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import com.tianji.aigc.config.SystemPromptConfig;
 import com.tianji.aigc.config.ToolResultHolder;
 import com.tianji.aigc.constants.Constant;
@@ -75,6 +76,10 @@ public class ChatServiceImpl implements ChatService {
                 //当大模型生成状态为false时，停止生成
                 .takeWhile(chatResponse -> GENERATE_STATUS.getOrDefault(sessionId, false))
                 .map(chatResponse -> {
+                    //此段逻辑是为了可以根据消息di获取的请求id，再通过请求id就可以获取到参数列表，存储到ToolResultHolder中
+                    //获取消息id
+                    String messageId = chatResponse.getMetadata().getId();
+                    ToolResultHolder.put(messageId, Constant.REQUEST_ID, requestId);
                     //拿到大模型生成的内容
                     var text = chatResponse.getResult().getOutput().getText();
                     //大模型输出的内容
