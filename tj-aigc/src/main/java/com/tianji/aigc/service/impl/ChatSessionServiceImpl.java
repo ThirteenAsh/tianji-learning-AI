@@ -9,6 +9,7 @@ import com.tianji.aigc.config.SessionProperties;
 import com.tianji.aigc.entity.ChatSession;
 import com.tianji.aigc.enums.MessageTypeEnum;
 import com.tianji.aigc.mapper.ChatSessionMapper;
+import com.tianji.aigc.memory.MyAssistantMessage;
 import com.tianji.aigc.service.ChatService;
 import com.tianji.aigc.service.ChatSessionService;
 import com.tianji.aigc.vo.MessageVO;
@@ -72,10 +73,21 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
                 // 过滤掉非用户消息和助手消息
                 .filter(message -> message.getMessageType() == MessageType.ASSISTANT || message.getMessageType() == MessageType.USER)
                 // 转换为MessageVO对象
-                .map(message -> MessageVO.builder()
-                        .content(message.getText())
-                        .type(MessageTypeEnum.valueOf(message.getMessageType().name()))
-                        .build())
+                .map(message -> {
+                    //此处判断是否为自定义的AssistantMessage类型，如果是，则将params属性也包含在MessageVO中,return MessageVO对象
+                    if (message instanceof MyAssistantMessage) {
+                        return MessageVO.builder()
+                                .content(message.getText())
+                                .type(MessageTypeEnum.valueOf(message.getMessageType().name()))
+                                .params(((MyAssistantMessage) message).getParams())
+                                .build();
+                    }
+                    //否则，直接返回MessageVO对象,使用Spring AI原生的AssistantMessage类的getText()方法获取消息内容
+                    return MessageVO.builder()
+                            .content(message.getText())
+                            .type(MessageTypeEnum.valueOf(message.getMessageType().name()))
+                            .build();
+                })
                 .toList();
     }
 
